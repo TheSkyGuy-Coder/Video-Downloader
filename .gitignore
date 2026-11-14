@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.spec
+icon.ico
+ffmpeg.zip
+ffmpeg_tmp/

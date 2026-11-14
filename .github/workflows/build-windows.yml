@@ -1,0 +1,53 @@
+name: Windows-App bauen
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: helper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pakete installieren
+        run: python -m pip install -r requirements-build.txt
+      - name: Symbol erzeugen
+        run: python make_icon.py
+      - name: App bauen
+        run: pyinstaller --noconfirm --clean --windowed --onedir --name "m3u8-Helfer" --icon icon.ico --add-data "dashboard.html;." app.py
+      - name: yt-dlp und ffmpeg beilegen
+        shell: pwsh
+        run: |
+          $out = "dist/m3u8-Helfer/tools"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Invoke-WebRequest https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile "$out/yt-dlp.exe"
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp -Force
+          foreach ($n in "ffmpeg.exe","ffprobe.exe") {
+            Copy-Item (Get-ChildItem ffmpeg_tmp -Recurse -Filter $n | Select-Object -First 1).FullName "$out/$n"
+          }
+      - name: Startet die App? (Rauchtest)
+        shell: pwsh
+        run: |
+          $p = Start-Process "dist/m3u8-Helfer/m3u8-Helfer.exe" -ArgumentList "--minimized","--port","8799" -PassThru
+          $ok = $false
+          foreach ($i in 1..30) {
+            Start-Sleep 1
+            try { Invoke-WebRequest http://127.0.0.1:8799/ -UseBasicParsing | Out-Null; $ok = $true; break } catch {}
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "App antwortet nicht auf Port 8799" }
+      - name: Zip erstellen
+        shell: pwsh
+        run: Compress-Archive -Path dist/m3u8-Helfer -DestinationPath m3u8-Helfer-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m3u8-Helfer-windows
+          path: helper/m3u8-Helfer-windows.zip
