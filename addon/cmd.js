@@ -286,6 +286,11 @@
   }
 
   // Auftrag für den Helfer: gleiche Einstellungen, aber Ausgabe/Benennung bestimmt der Helfer
+  // URL, unter der der Helfer den Auftrag führt (zum Erkennen schon gesendeter Quellen)
+  function jobUrl(src, m) {
+    return src.kind === "page" ? pageTarget(src, m) : src.url;
+  }
+
   function toJob(src, m, ctx) {
     ctx = ctx || {};
     const res = build(src, m, { job: true });
@@ -295,7 +300,7 @@
       warnings: res.warnings,
       job: {
         tool: m.tool, argv: tokenize(res.text), kind: src.kind,
-        url: src.kind === "page" ? pageTarget(src, m) : src.url,
+        url: jobUrl(src, m),
         title: ctx.title || "", site: ctx.site || "", page_url: ctx.pageUrl || "",
         name: ctx.name || null, ext: res.ext || null,
       },
@@ -327,7 +332,7 @@
     persistable, matchesPreset, pickKeys,
     templateName, plainName, cleanFolder, joinPath, validTime,
     availHeights, defaultPlaylist, pageTarget,
-    buildYtdlp, buildFfmpeg, build, hints, tokenize, toJob,
+    buildYtdlp, buildFfmpeg, build, hints, tokenize, toJob, jobUrl,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Cmd = api;

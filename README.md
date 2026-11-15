@@ -25,6 +25,8 @@ Voraussetzung: Python 3.10+.
 
 - **Fenster schließen** schiebt die App in den Tray (Symbol unten rechts). **Beenden** nur über das Tray-Menü.
 - Tray-Menü: Öffnen, Download-Ordner, *Mit Windows starten*, *yt-dlp aktualisieren*, Beenden.
+- **Mehrere Videos auf einer Seite**: Das Add-on nummeriert die Quellen („Videodatei 1“, „Videodatei 2“ …) und hängt die Nummer an den Standardnamen. Quellen, die schon im Helfer liegen, tragen eine Marke (⏳ wartet, ⬇ lädt, ✓ fertig, ✗ Fehler). Eine URL, die schon wartet, lädt oder fertig ist, wird nur nach Rückfrage nochmal gesendet; der Helfer lehnt Doppelte sonst ab.
+- **Umbenennen**: Bei fertigen Jobs im Dashboard auf *Umbenennen* klicken. Die Datei wird auf der Platte umbenannt und der Job zeigt auf den neuen Namen, Komprimieren funktioniert danach ganz normal.
 - **Komprimieren**: In der Warteschlange bei einem fertigen Video auf *Komprimieren…* klicken (Qualität per CRF oder Zielgröße in MB).
 - **Benennung**: Dashboard → Einstellungen. Variablen `{site} {page_title} {date} {time} {job}`, dazu yt-dlp-Platzhalter wie `%(title)s`.
 - **Dateiprüfung**: Fertige Downloads werden auf Lesbarkeit geprüft. Defekte Dateien (z. B. verschlüsselte Streams) werden als Fehler markiert statt als „Fertig“.

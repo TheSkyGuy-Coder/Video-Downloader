@@ -50,6 +50,15 @@
   }
 
   // ---------- Quelle ----------
+  const JOB_LABEL = { queued: "⏳ wartet", running: "⬇ lädt", done: "✓ fertig", failed: "✗ Fehler", canceled: "abgebrochen" };
+  function jobLabel(j) {
+    if (j.status === "running" && j.progress != null) return "⬇ " + Math.round(j.progress) + " %";
+    return JOB_LABEL[j.status] || j.status;
+  }
+  function jobBadge(j) {
+    return j ? h("span", { class: "badge job " + j.status, title: "Auftrag im Helfer", text: jobLabel(j) }) : null;
+  }
+
   function sourcesCard(app, hooks) {
     const box = h("div", { class: "sources" });
     if (!app.sources.length) {
@@ -67,8 +76,8 @@
           "button",
           { type: "button", class: "src" + (sel ? " sel" : ""), "aria-pressed": String(sel), onclick: () => hooks.selectSource(s.id) },
           h("span", { class: "src-ico", text: s.icon }),
-          h("span", { class: "src-main" }, h("span", { class: "src-title", text: s.title }), h("span", { class: "src-sub", text: s.sub })),
-          s.badge ? h("span", { class: "badge " + (s.badgeClass || ""), text: s.badge }) : null
+          h("span", { class: "src-main" }, h("span", { class: "src-title", text: s.title + (s.n && app.streamCount > 1 ? " " + s.n : "") }), h("span", { class: "src-sub", text: s.sub })),
+          h("span", { class: "src-badges" }, jobBadge(app.jobFor && app.jobFor(s)), s.badge ? h("span", { class: "badge " + (s.badgeClass || ""), text: s.badge }) : null)
         )
       );
     });
@@ -387,23 +396,44 @@
     }
     const copyBtn = h("button", { type: "button", class: "btn primary big", text: "Befehl kopieren" });
     copyBtn.onclick = () => copyText(res.text, copyBtn);
-    const sendBtn = h("button", { type: "button", class: "btn primary big", text: "An Helfer senden", title: "Legt einen Download-Auftrag im lokalen Helfer an" });
-    const msg = h("p", { class: "sendmsg", style: "display:none" });
+    const jobKey = C.jobUrl(app.src, app.model);
+    const prev = app.jobFor(app.src);
+    const active = !!(prev && (prev.status === "queued" || prev.status === "running" || prev.status === "done"));
+    const armed = app.armedUrl === jobKey;
+    const sendBtn = h("button", {
+      type: "button", class: "btn primary big" + (active && !armed ? " warnbtn" : ""),
+      text: active ? (armed ? "Wirklich nochmal senden" : "Schon im Helfer (" + jobLabel(prev).replace(/^\S+\s/, "") + "), nochmal senden?") : "An Helfer senden",
+      title: "Legt einen Download-Auftrag im lokalen Helfer an",
+    });
+    const sm = app.sendMsg && app.sendMsg.key === jobKey && Date.now() - app.sendMsg.ts < 30000 ? app.sendMsg : null;
+    const msg = h("p", { class: "sendmsg " + (sm ? (sm.ok ? "ok" : "bad") : ""), style: sm ? "" : "display:none", text: sm ? sm.text : "" });
     sendBtn.onclick = async () => {
+      if (active && !armed) {
+        app.armedUrl = jobKey;
+        return fillCommand(box, app, hooks);
+      }
       const typed = app.names[app.src.id];
       let site = "";
       try { site = new URL(app.tab.url).hostname.replace(/^www\./, ""); } catch (_) {}
       const jr = C.toJob(app.src, app.model, {
-        title: root.Shared.cleanTitle(app.tab.title || ""), site, pageUrl: app.tab.url || "",
+        title: app.titleFor(app.src), site, pageUrl: app.tab.url || "",
         name: typed != null && String(typed).trim() ? String(typed).trim() : null,
       });
-      const show = (ok, text) => { msg.className = "sendmsg " + (ok ? "ok" : "bad"); msg.textContent = text; msg.style.display = ""; };
+      const show = (ok, text) => {
+        app.sendMsg = { key: jobKey, ok, text, ts: Date.now() };
+        msg.className = "sendmsg " + (ok ? "ok" : "bad");
+        msg.textContent = text;
+        msg.style.display = "";
+      };
       if (!jr.ok) return show(false, jr.reason || "Kein Auftrag möglich.");
+      if (active) jr.job.force = true;
       sendBtn.disabled = true;
       try {
         const r = await root.Dom.bgCall({ type: "helperSend", job: jr.job });
+        app.armedUrl = null;
         if (r && r.ok) show(true, "✓ Auftrag angelegt" + (r.id ? " (" + r.id + ")" : "") + ". Fortschritt im Helfer-Dashboard.");
         else show(false, (r && r.error) || "Senden fehlgeschlagen.");
+        hooks.helperRefresh();
       } finally {
         sendBtn.disabled = false;
       }

@@ -239,9 +239,25 @@ ol.steps { padding-left: 20px; margin: 8px 0; }
     r.bRetry = h("button", { class: "btn small", type: "button", text: "Wiederholen", onclick: () => act(j.id, "retry") });
     r.bOpen = h("button", { class: "btn small", type: "button", text: "Ordner öffnen", onclick: () => act(j.id, "open") });
     r.bComp = h("button", { class: "btn small primary", type: "button", text: "Komprimieren …", onclick: () => { r.form.hidden = !r.form.hidden; } });
+    r.bRen = h("button", { class: "btn small", type: "button", text: "Umbenennen", onclick: () => {
+      r.rform.hidden = !r.rform.hidden;
+      if (!r.rform.hidden) {
+        const f = fileName((r._job.files || [])[0] || "");
+        r.rname.value = f.replace(/\.[^.]+$/, "");
+        r.rname.focus(); r.rname.select();
+      }
+    } });
     r.bLog = h("button", { class: "btn small", type: "button", text: "Protokoll", onclick: () => toggleLog(j.id, r) });
     r.bDel = h("button", { class: "btn small", type: "button", text: "Entfernen", onclick: () => act(j.id, "delete") });
-    r.act = h("div", { class: "jact" }, r.bCancel, r.bRetry, r.bComp, r.bOpen, r.bLog, r.bDel);
+    r.act = h("div", { class: "jact" }, r.bCancel, r.bRetry, r.bComp, r.bRen, r.bOpen, r.bLog, r.bDel);
+
+    r.rname = h("input", { type: "text", spellcheck: "false", style: "flex:1;min-width:220px", onkeydown: (ev) => { if (ev.key === "Enter") doRename(j.id, r); if (ev.key === "Escape") r.rform.hidden = true; } });
+    r.rmsg = h("div", { class: "jerr", hidden: true });
+    r.rform = h("div", { class: "cform", hidden: true },
+      h("div", { class: "row" }, h("label", { class: "fld", style: "flex:1" }, "Neuer Dateiname (ohne Endung)", r.rname),
+        h("button", { class: "btn small primary", type: "button", text: "Umbenennen", onclick: () => doRename(j.id, r) }),
+        h("button", { class: "btn small", type: "button", text: "Schließen", onclick: () => { r.rform.hidden = true; } })),
+      r.rmsg);
 
     r.preset = h("select", { onchange: () => syncForm(r) });
     r.mb = h("input", { type: "number", min: "1", step: "1", placeholder: "z. B. 100" });
@@ -257,7 +273,7 @@ ol.steps { padding-left: 20px; margin: 8px 0; }
     r.log = h("pre", { class: "log", hidden: true });
 
     const el = h("article", { class: "job", "data-id": j.id },
-      h("div", { class: "jhead" }, r.badge, r.title, r.site), r.bar, r.meta, r.err, r.hint, r.act, r.form, r.log);
+      h("div", { class: "jhead" }, r.badge, r.title, r.site), r.bar, r.meta, r.err, r.hint, r.act, r.rform, r.form, r.log);
     el._r = r;
     return el;
   }
@@ -278,6 +294,7 @@ ol.steps { padding-left: 20px; margin: 8px 0; }
 
   function updateCard(el, j) {
     const r = el._r;
+    r._job = j;
     const isC = j.type === "compress";
     el.className = "job " + j.status;
     const labels = { queued: "Wartet", running: j.phase || "Läuft", done: "Fertig", failed: "Fehler", canceled: "Abgebrochen" };
@@ -310,6 +327,8 @@ ol.steps { padding-left: 20px; margin: 8px 0; }
     r.bOpen.hidden = !(j.status === "done" && (j.files || []).length);
     r.bComp.hidden = !(j.status === "done" && !isC && (j.files || []).length);
     r.bDel.hidden = j.status === "running";
+    r.bRen.hidden = !(j.status === "done" && (j.files || []).length === 1);
+    if (r.bRen.hidden) r.rform.hidden = true;
     if (r.bComp.hidden) r.form.hidden = true;
     fillPresets(r, state.settings.presets || []);
   }
@@ -317,6 +336,18 @@ ol.steps { padding-left: 20px; margin: 8px 0; }
   async function act(id, action) {
     try { await api("/api/jobs/" + id + "/" + action, {}); await refresh(); }
     catch (e) { alert(e.message); }
+  }
+
+  async function doRename(id, r) {
+    r.rmsg.hidden = true;
+    try {
+      await api("/api/jobs/" + id + "/rename", { name: r.rname.value });
+      r.rform.hidden = true;
+      await refresh();
+    } catch (e) {
+      r.rmsg.hidden = false;
+      r.rmsg.textContent = e.message;
+    }
   }
 
   async function startCompress(id, r) {

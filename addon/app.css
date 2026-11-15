@@ -138,3 +138,12 @@ pre.plain { background: var(--card); padding: 6px 8px; border-radius: 6px; overf
 .sendmsg { margin: 6px 0 0; padding: 5px 8px; border-radius: 6px; }
 .sendmsg.ok { background: #1a7f3733; }
 .sendmsg.bad { background: var(--warn-bg); color: var(--warn); }
+
+/* Auftragsstatus an Quellen */
+.badge.job { min-width: 0; white-space: nowrap; margin-right: 4px; }
+.badge.job.running { background: #1a73e866; }
+.badge.job.queued { background: #8886; }
+.badge.job.done { background: #1a7f3766; }
+.badge.job.failed { background: #d3333366; }
+.warnbtn { background: transparent; color: inherit; border: 1px solid var(--warn, #c60); }
+.src-badges { display: flex; gap: 4px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }

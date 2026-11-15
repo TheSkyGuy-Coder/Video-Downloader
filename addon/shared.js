@@ -2,7 +2,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = "2.0";
+  const VERSION = "2.1";
 
   // ---------- Erkennung ----------
   const isManifestUrl = (u) => /\.(m3u8|mpd)(\?|#|$)/i.test(u);

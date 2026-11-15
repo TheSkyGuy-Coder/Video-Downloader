@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "m3u8 → yt-dlp",
-  "version": "2.0",
+  "version": "2.1",
   "description": "Findet Videos und Streams auf der Seite und baut dir den passenden yt-dlp- oder ffmpeg-Befehl zum Zusammenklicken und schickt Downloads als Job an den lokalen Helfer. Auch für YouTube.",
   "permissions": ["webRequest", "webRequestBlocking", "tabs", "clipboardWrite", "storage", "menus", "<all_urls>"],
   "background": { "scripts": ["shared.js", "background.js"], "persistent": true },

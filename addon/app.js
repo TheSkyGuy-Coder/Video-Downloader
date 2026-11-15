@@ -13,6 +13,7 @@
     mode, view: "builder", tabId: null, tab: { url: "", title: "" }, tabsList: [],
     snap: { entries: [], log: [], counts: {}, capture: true, pageUrl: "" },
     sources: [], selected: null, src: null, userPicked: false,
+    streamCount: 0, helperJobs: [], helperOk: false, armedUrl: null, sendMsg: null,
     model: Object.assign({}, C.DEFAULT_MODEL), userPresets: [], names: {},
     savingPreset: false, advOpen: false, hintsOpen: false, mask: true, errors: [], sig: "",
   };
@@ -79,6 +80,10 @@
         priority: !okStatus || invalid ? 3 : pl && pl.valid && pl.kind === "master" ? 70 : 50,
       });
     });
+    // Laufende Nummer (älteste = 1) für alle brauchbaren Streams, damit mehrere Videos nicht gleich heißen
+    const usable = list.filter((s) => s.kind === "stream" && s.priority > 3).reverse();
+    usable.forEach((s, i) => (s.n = i + 1));
+    app.streamCount = usable.length;
     app.sources = list;
     const keep = app.userPicked ? list.find((s) => s.id === app.selected) : null;
     if (keep) applySource(keep.id);
@@ -89,6 +94,42 @@
         if (!best || s.priority > best.priority) best = s;
       });
       applySource(best ? best.id : null);
+    }
+  }
+
+  // Standardname einer Quelle: Seitentitel, bei mehreren Streams mit Zähler
+  app.nameFor = (s) => {
+    const base = S.safeName(S.cleanTitle(app.tab.title)) || "video";
+    return s && s.n && app.streamCount > 1 ? base + " " + s.n : base;
+  };
+  app.titleFor = (s) => {
+    const base = S.cleanTitle(app.tab.title || "");
+    return s && s.kind === "stream" && s.n && app.streamCount > 1 ? (base || "video") + " " + s.n : base;
+  };
+
+  // ---------- Status der Aufträge im Helfer ----------
+  const urlKey = (u) => String(u || "").trim().split("#")[0];
+  const RANK = { running: 5, queued: 4, done: 3, failed: 2, canceled: 1 };
+  app.jobFor = (s) => {
+    if (!s) return null;
+    const key = urlKey(C.jobUrl(s, app.model));
+    let best = null;
+    app.helperJobs.forEach((j) => {
+      if (j.type === "download" && urlKey(j.url) === key && (!best || (RANK[j.status] || 0) > (RANK[best.status] || 0))) best = j;
+    });
+    return best;
+  };
+  let helperAt = 0;
+  async function refreshHelper(force) {
+    if (!force && Date.now() - helperAt < 3000) return;
+    helperAt = Date.now();
+    try {
+      const r = await bgCall({ type: "helperState" });
+      app.helperOk = !!(r && r.ok);
+      app.helperJobs = r && r.ok && Array.isArray(r.jobs) ? r.jobs : [];
+    } catch (_) {
+      app.helperOk = false;
+      app.helperJobs = [];
     }
   }
 
@@ -107,7 +148,7 @@
       if (s.kind === "page") m.tool = "ytdlp";
     }
     if (app.names[s.id] != null) m.name = app.names[s.id];
-    else m.name = s.kind === "page" ? "%(title)s" : S.safeName(S.cleanTitle(app.tab.title)) || "video";
+    else m.name = s.kind === "page" ? "%(title)s" : app.nameFor(s);
   }
 
   // ---------- Daten holen ----------
@@ -144,6 +185,7 @@
   async function poll() {
     try {
       if (!(await refresh())) return;
+      await refreshHelper();
       const a = document.activeElement;
       const typing = a && ((a.tagName === "INPUT" && a.type === "text") || a.tagName === "TEXTAREA");
       if (typing && app.view === "builder") Builder.updateCommand(app, hooks);
@@ -155,6 +197,10 @@
 
   // ---------- Aktionen ----------
   const hooks = {
+    async helperRefresh() {
+      await refreshHelper(true);
+      render();
+    },
     change() {
       saveModel();
       render();
@@ -313,6 +359,7 @@
       app.tabId = ts[0] ? ts[0].id : null;
     }
     await refresh();
+    await refreshHelper(true);
     render();
     setInterval(poll, 1500);
   } catch (err) {

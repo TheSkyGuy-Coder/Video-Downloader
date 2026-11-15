@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION = "2.0"
+VERSION = "2.1"
 IS_WIN = os.name == "nt"
 DEFAULT_PORT = 8765
 APP_DIR = Path(getattr(sys, "_MEIPASS", None) or Path(__file__).resolve().parent)
@@ -681,6 +681,66 @@ class Manager:
     def add_download(self, fields):
         return self.new_job("download", **fields)
 
+    @staticmethod
+    def _url_key(u):
+        return str(u or "").strip().split("#")[0]
+
+    def find_duplicate(self, url):
+        """Gibt (id, status) eines Downloads mit gleicher URL zurueck, der wartet, laeuft oder fertig ist."""
+        key = self._url_key(url)
+        with self.lock:
+            for j in reversed(list(self.jobs.values())):
+                if j.get("type") == "download" and j.get("status") in ("queued", "running", "done") and self._url_key(j.get("url")) == key:
+                    return j["id"], j["status"]
+        return None
+
+    def rename(self, jid, newname):
+        """Benennt die fertige Datei eines Jobs um und zieht alle Verweise nach. Gibt (neuer Pfad, Fehler) zurueck."""
+        with self.lock:
+            j = self.jobs.get(jid)
+            if not j or j.get("status") != "done":
+                return None, "Nur fertige Jobs lassen sich umbenennen"
+            files = list(j.get("files") or [])
+            if not files:
+                return None, "Keine Datei vorhanden"
+            if len(files) > 1:
+                return None, "Der Job hat mehrere Dateien, Umbenennen geht nur bei einer"
+            src = Path(files[0])
+            if not src.is_file():
+                return None, "Die Datei existiert nicht mehr"
+            name = str(newname or "").replace("%", "").strip()
+            if name.lower().endswith(src.suffix.lower()) and src.suffix:
+                name = name[: -len(src.suffix)]
+            name = sanitize_seg(name, 180)
+            if not name:
+                return None, "Bitte einen Namen angeben"
+            target = src.with_name(name + src.suffix)
+            if str(target) == str(src):
+                return str(src), None
+            for o in self.jobs.values():
+                if o is not j and o.get("input") == str(src) and o.get("status") in ("queued", "running"):
+                    return None, "Für diese Datei läuft oder wartet gerade eine Komprimierung"
+            if target.exists():
+                try:
+                    same = os.path.samefile(str(src), str(target))
+                except OSError:
+                    same = False
+                if not same:
+                    return None, "Es gibt schon eine Datei mit diesem Namen"
+            try:
+                os.replace(str(src), str(target))
+            except OSError as e:
+                return None, "Umbenennen nicht möglich (%s). Ist die Datei gerade geöffnet?" % (e.strerror or e)
+            old, new = str(src), str(target)
+            for o in self.jobs.values():
+                if o.get("files"):
+                    o["files"] = [new if f == old else f for f in o["files"]]
+                if o.get("input") == old:
+                    o["input"] = new
+            self.add_log(j, "Umbenannt: %s -> %s" % (src.name, target.name))
+        self.save()
+        return str(target), None
+
     def public(self, j):
         d = {k: j.get(k) for k in PUBLIC_FIELDS}
         d["files"] = list(j.get("files") or [])
@@ -1313,9 +1373,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.err(400, "Ungültige Anfrage: %s" % e)
 
             if path == "/api/jobs":
+                force = bool(data.pop("force", False)) if isinstance(data, dict) else False
                 fields, error = validate_payload(data)
                 if error:
                     return self.err(400, error)
+                dup = None if force else MANAGER.find_duplicate(fields["url"])
+                if dup:
+                    labels = {"queued": "wartet schon", "running": "wird schon heruntergeladen", "done": "wurde schon heruntergeladen"}
+                    return self.send(409, {"ok": False, "duplicate": True, "id": dup[0], "status": dup[1], "error": "Diese URL %s." % labels.get(dup[1], "ist schon vorhanden")})
                 if not fields["title"]:
                     fields["title"] = urlparse(fields["url"]).netloc
                 j = MANAGER.add_download(fields)
@@ -1354,7 +1419,7 @@ class Handler(BaseHTTPRequestHandler):
                 MANAGER.clear_finished()
                 return self.send(200, {"ok": True})
 
-            m = re.match(r"^/api/jobs/([0-9a-f]{8})/(cancel|retry|delete|compress|open)$", path)
+            m = re.match(r"^/api/jobs/([0-9a-f]{8})/(cancel|retry|delete|compress|open|rename)$", path)
             if not m:
                 return self.err(404, "Nicht gefunden")
             jid, action = m.group(1), m.group(2)
@@ -1373,6 +1438,11 @@ class Handler(BaseHTTPRequestHandler):
                 if error:
                     return self.err(400, error)
                 return self.send(200, {"ok": True, "ids": ids})
+            if action == "rename":
+                new, error = MANAGER.rename(jid, data.get("name"))
+                if error:
+                    return self.err(400, error)
+                return self.send(200, {"ok": True, "file": new, "name": Path(new).name})
             if action == "open":
                 j = MANAGER.jobs[jid]
                 target = (j.get("files") or [None])[0] or j.get("dir")
